@@ -62,6 +62,258 @@ class WBV_REST_Controller
                 return current_user_can('manage_woocommerce');
             },
         ));
+
+        register_rest_route('wbvpricer/v1', '/quick-create-variations', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array(__CLASS__, 'handle_quick_create_variations'),
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ));
+
+        register_rest_route('wbvpricer/v1', '/quick-create-attribute-variations', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array(__CLASS__, 'handle_quick_create_attribute_variations'),
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ));
+
+        register_rest_route('wbvpricer/v1', '/bulk-update-fields', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array(__CLASS__, 'handle_bulk_update_fields'),
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ));
+    }
+
+    public static function handle_quick_create_variations(WP_REST_Request $request)
+    {
+        if (! function_exists('wc_get_product')) {
+            return new WP_Error('no_woocommerce', 'WooCommerce is not available', array('status' => 500));
+        }
+
+        $params = $request->get_json_params();
+        $product_ids = isset($params['product_ids']) && is_array($params['product_ids']) ? $params['product_ids'] : array();
+        $max_per_product = isset($params['max_per_product']) ? absint($params['max_per_product']) : 50;
+        $max_per_product = max(1, min(100, $max_per_product));
+
+        $product_ids = array_values(array_unique(array_filter(array_map('absint', $product_ids))));
+        if (empty($product_ids)) {
+            return new WP_Error('no_products', 'No product IDs provided', array('status' => 400));
+        }
+
+        $created_total = 0;
+        $results = array();
+
+        foreach ($product_ids as $product_id) {
+            $product = wc_get_product($product_id);
+            if (! $product || $product->get_type() !== 'variable') {
+                $results[] = array('product_id' => $product_id, 'created' => 0, 'error' => 'Product not found or not variable');
+                continue;
+            }
+
+            $before_count = count((array) $product->get_children());
+            $created_for_product = 0;
+
+            if (class_exists('WC_Product_Data_Store_CPT')) {
+                $data_store = new WC_Product_Data_Store_CPT();
+                $created_for_product = (int) $data_store->create_all_product_variations($product, $max_per_product);
+            }
+
+            WC_Product_Variable::sync($product_id);
+            wc_delete_product_transients($product_id);
+
+            $product = wc_get_product($product_id);
+            $after_count = $product ? count((array) $product->get_children()) : $before_count;
+            if ($created_for_product < 1 && $after_count > $before_count) {
+                $created_for_product = $after_count - $before_count;
+            }
+
+            $created_total += max(0, $created_for_product);
+            $results[] = array(
+                'product_id' => $product_id,
+                'created' => max(0, $created_for_product),
+                'before' => $before_count,
+                'after' => $after_count,
+            );
+        }
+
+        return rest_ensure_response(array(
+            'created_total' => $created_total,
+            'results' => $results,
+        ));
+    }
+
+    public static function handle_quick_create_attribute_variations(WP_REST_Request $request)
+    {
+        if (! function_exists('wc_get_product')) {
+            return new WP_Error('no_woocommerce', 'WooCommerce is not available', array('status' => 500));
+        }
+
+        $params = $request->get_json_params();
+        $product_ids = isset($params['product_ids']) && is_array($params['product_ids']) ? $params['product_ids'] : array();
+        $taxonomy = isset($params['attribute_taxonomy']) ? sanitize_text_field($params['attribute_taxonomy']) : '';
+        $values = isset($params['values']) && is_array($params['values']) ? $params['values'] : array();
+        $regular_price = isset($params['regular_price']) ? wc_format_decimal($params['regular_price']) : '';
+        $stock_qty = isset($params['stock_quantity']) ? intval($params['stock_quantity']) : null;
+
+        $product_ids = array_values(array_unique(array_filter(array_map('absint', $product_ids))));
+        $values = array_values(array_unique(array_filter(array_map('sanitize_text_field', $values))));
+
+        if (empty($product_ids) || empty($taxonomy) || empty($values)) {
+            return new WP_Error('invalid_payload', 'product_ids, attribute_taxonomy and values are required', array('status' => 400));
+        }
+
+        $created_total = 0;
+        $results = array();
+
+        foreach ($product_ids as $product_id) {
+            $product = wc_get_product($product_id);
+            if (! $product || $product->get_type() !== 'variable') {
+                $results[] = array('product_id' => $product_id, 'created' => 0, 'skipped' => 0, 'error' => 'Product not found or not variable');
+                continue;
+            }
+
+            $existing_values = array();
+            foreach ((array) $product->get_children() as $child_id) {
+                $child = wc_get_product($child_id);
+                if (! $child) {
+                    continue;
+                }
+                $attrs = $child->get_attributes();
+                if (isset($attrs[$taxonomy]) && $attrs[$taxonomy] !== '') {
+                    $existing_values[] = (string) $attrs[$taxonomy];
+                }
+            }
+            $existing_values = array_unique($existing_values);
+
+            $created_for_product = 0;
+            $skipped_for_product = 0;
+
+            foreach ($values as $value_raw) {
+                $term = get_term_by('slug', $value_raw, $taxonomy);
+                if (! $term) {
+                    $term = get_term_by('name', $value_raw, $taxonomy);
+                }
+                $value = $term ? $term->slug : sanitize_title($value_raw);
+
+                if (in_array($value, $existing_values, true)) {
+                    $skipped_for_product++;
+                    continue;
+                }
+
+                $variation = new WC_Product_Variation();
+                $variation->set_parent_id($product_id);
+                $variation->set_attributes(array($taxonomy => $value));
+                if ($regular_price !== '') {
+                    $variation->set_regular_price($regular_price);
+                }
+                if ($stock_qty !== null && $stock_qty >= 0) {
+                    $variation->set_manage_stock(true);
+                    $variation->set_stock_quantity($stock_qty);
+                }
+                $variation->set_status('publish');
+                $new_id = $variation->save();
+
+                if ($new_id) {
+                    $created_for_product++;
+                    $existing_values[] = $value;
+                }
+            }
+
+            WC_Product_Variable::sync($product_id);
+            wc_delete_product_transients($product_id);
+
+            $created_total += $created_for_product;
+            $results[] = array(
+                'product_id' => $product_id,
+                'created' => $created_for_product,
+                'skipped' => $skipped_for_product,
+            );
+        }
+
+        return rest_ensure_response(array(
+            'created_total' => $created_total,
+            'results' => $results,
+        ));
+    }
+
+    public static function handle_bulk_update_fields(WP_REST_Request $request)
+    {
+        if (! function_exists('wc_get_product')) {
+            return new WP_Error('no_woocommerce', 'WooCommerce is not available', array('status' => 500));
+        }
+
+        $params = $request->get_json_params();
+        $variation_ids = isset($params['variation_ids']) && is_array($params['variation_ids']) ? $params['variation_ids'] : array();
+        $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+        $variation_ids = array_values(array_unique(array_filter(array_map('absint', $variation_ids))));
+
+        if (empty($variation_ids) || empty($fields)) {
+            return new WP_Error('invalid_payload', 'variation_ids and fields are required', array('status' => 400));
+        }
+
+        $updated = array();
+        $errors = array();
+
+        foreach ($variation_ids as $vid) {
+            $variation = wc_get_product($vid);
+            if (! $variation || ! is_a($variation, 'WC_Product_Variation')) {
+                $errors[] = array('variation_id' => $vid, 'error' => 'Variation not found');
+                continue;
+            }
+
+            if (isset($fields['sku_prefix']) && $fields['sku_prefix'] !== '') {
+                $current_sku = (string) $variation->get_sku();
+                $variation->set_sku(sanitize_text_field($fields['sku_prefix']) . $vid . ($current_sku !== '' ? '-' . $current_sku : ''));
+            }
+            if (isset($fields['regular_price']) && $fields['regular_price'] !== '') {
+                $variation->set_regular_price(wc_format_decimal($fields['regular_price']));
+            }
+            if (isset($fields['sale_price']) && $fields['sale_price'] !== '') {
+                $variation->set_sale_price(wc_format_decimal($fields['sale_price']));
+            }
+            if (isset($fields['stock_quantity']) && $fields['stock_quantity'] !== '') {
+                $variation->set_manage_stock(true);
+                $variation->set_stock_quantity(intval($fields['stock_quantity']));
+            }
+            if (isset($fields['stock_status']) && in_array($fields['stock_status'], array('instock', 'outofstock', 'onbackorder'), true)) {
+                $variation->set_stock_status($fields['stock_status']);
+            }
+            if (isset($fields['shipping_class_id']) && $fields['shipping_class_id'] !== '') {
+                $variation->set_shipping_class_id(absint($fields['shipping_class_id']));
+            }
+            if (isset($fields['weight']) && $fields['weight'] !== '') {
+                $variation->set_weight(wc_format_decimal($fields['weight']));
+            }
+            if (isset($fields['length']) && $fields['length'] !== '') {
+                $variation->set_length(wc_format_decimal($fields['length']));
+            }
+            if (isset($fields['width']) && $fields['width'] !== '') {
+                $variation->set_width(wc_format_decimal($fields['width']));
+            }
+            if (isset($fields['height']) && $fields['height'] !== '') {
+                $variation->set_height(wc_format_decimal($fields['height']));
+            }
+
+            $saved = $variation->save();
+            if (! $saved) {
+                $errors[] = array('variation_id' => $vid, 'error' => 'Could not save variation');
+                continue;
+            }
+
+            WC_Product_Variable::sync($variation->get_parent_id());
+            wc_delete_product_transients($variation->get_parent_id());
+            $updated[] = $vid;
+        }
+
+        return rest_ensure_response(array(
+            'updated_count' => count($updated),
+            'updated' => $updated,
+            'errors' => $errors,
+        ));
     }
 
     public static function handle_search(WP_REST_Request $request)
