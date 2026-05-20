@@ -234,7 +234,9 @@
 
         const previewBtn = qs('#wbv-preview-btn');
         const applyBtn = qs('#wbv-apply-btn');
+        const quickCreateBtn = qs('#wbv-quick-create-variations-btn');
         const exportBtn = qs('#wbv-export-csv');
+        const bulkFieldsBtn = qs('#wbv-bulk-fields-apply-btn');
 
         previewBtn.addEventListener('click', function (e) {
             e.preventDefault();
@@ -245,11 +247,23 @@
             e.preventDefault();
             handleApply();
         });
+        if (quickCreateBtn) {
+            quickCreateBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                handleQuickCreateVariations();
+            });
+        }
 
         exportBtn.addEventListener('click', function (e) {
             e.preventDefault();
             handleExportCSV();
         });
+        if (bulkFieldsBtn) {
+            bulkFieldsBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                handleBulkFieldUpdate();
+            });
+        }
 
         // Global select-all visible checkbox (attach once)
         const globalSelect = qs('#wbv-select-all-visible');
@@ -494,6 +508,116 @@
     function getSelectedVariationIds() {
         const checked = Array.from(document.querySelectorAll('.wbv-select-variation:checked'));
         return checked.map(c => parseInt(c.getAttribute('data-vid'), 10)).filter(Boolean);
+    }
+
+    function getSelectedProductIds() {
+        const checked = Array.from(document.querySelectorAll('.wbv-select-product:checked'));
+        return checked.map(c => parseInt(c.getAttribute('data-product-id'), 10)).filter(Boolean);
+    }
+
+    async function handleQuickCreateVariations() {
+        const selectedProducts = getSelectedProductIds();
+        if (selectedProducts.length === 0) {
+            alert('Please select at least one product.');
+            return;
+        }
+
+        const btn = qs('#wbv-quick-create-variations-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.dataset._orig = btn.textContent;
+            btn.textContent = 'Working…';
+        }
+
+        try {
+            const attributeTaxonomy = (qs('#wbv-qc-attribute') && qs('#wbv-qc-attribute').value.trim()) ? qs('#wbv-qc-attribute').value.trim() : '';
+            const valuesInput = (qs('#wbv-qc-values') && qs('#wbv-qc-values').value.trim()) ? qs('#wbv-qc-values').value.trim() : '';
+            const regularPriceInput = qs('#wbv-qc-regular-price') ? qs('#wbv-qc-regular-price').value.trim() : '';
+            const stockQtyInput = qs('#wbv-qc-stock-qty') ? qs('#wbv-qc-stock-qty').value.trim() : '';
+
+            let endpoint = `${restRoot}/quick-create-variations`;
+            let payload = { product_ids: selectedProducts, max_per_product: 50 };
+
+            if (attributeTaxonomy && valuesInput) {
+                const values = valuesInput.split(',').map(v => v.trim()).filter(Boolean);
+                payload = {
+                    product_ids: selectedProducts,
+                    attribute_taxonomy: attributeTaxonomy,
+                    values: values,
+                };
+                if (regularPriceInput !== '') payload.regular_price = regularPriceInput;
+                if (stockQtyInput !== '') payload.stock_quantity = parseInt(stockQtyInput, 10);
+                endpoint = `${restRoot}/quick-create-attribute-variations`;
+            }
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': nonce,
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Quick create failed');
+            }
+            alert(`Created ${data.created_total || 0} new variations.` + (data.results ? `\nProducts processed: ${data.results.length}` : ''));
+            qs('#wbv-search-btn')?.click();
+        } catch (e) {
+            alert(e.message || 'Quick create failed');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = btn.dataset._orig || 'Quick Add Variations';
+            }
+        }
+    }
+
+    async function handleBulkFieldUpdate() {
+        const selected = getSelectedVariationIds();
+        if (selected.length === 0) {
+            alert('Please select at least one variation.');
+            return;
+        }
+        const fields = {
+            sku_prefix: qs('#wbv-bf-sku-prefix') ? qs('#wbv-bf-sku-prefix').value.trim() : '',
+            regular_price: qs('#wbv-bf-regular-price') ? qs('#wbv-bf-regular-price').value.trim() : '',
+            sale_price: qs('#wbv-bf-sale-price') ? qs('#wbv-bf-sale-price').value.trim() : '',
+            stock_quantity: qs('#wbv-bf-stock-qty') ? qs('#wbv-bf-stock-qty').value.trim() : '',
+            stock_status: qs('#wbv-bf-stock-status') ? qs('#wbv-bf-stock-status').value : '',
+            shipping_class_id: qs('#wbv-bf-shipping-class-id') ? qs('#wbv-bf-shipping-class-id').value.trim() : '',
+            weight: qs('#wbv-bf-weight') ? qs('#wbv-bf-weight').value.trim() : '',
+            length: qs('#wbv-bf-length') ? qs('#wbv-bf-length').value.trim() : '',
+            width: qs('#wbv-bf-width') ? qs('#wbv-bf-width').value.trim() : '',
+            height: qs('#wbv-bf-height') ? qs('#wbv-bf-height').value.trim() : '',
+        };
+
+        const btn = qs('#wbv-bulk-fields-apply-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.dataset._orig = btn.textContent;
+            btn.textContent = 'Working…';
+        }
+
+        try {
+            const res = await fetch(`${restRoot}/bulk-update-fields`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+                body: JSON.stringify({ variation_ids: selected, fields: fields }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Bulk field update failed');
+            alert(`Updated ${data.updated_count || 0} variations.` + (data.errors && data.errors.length ? ` Errors: ${data.errors.length}` : ''));
+            qs('#wbv-search-btn')?.click();
+        } catch (e) {
+            alert(e.message || 'Bulk field update failed');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = btn.dataset._orig || 'Apply Fields';
+            }
+        }
     }
 
     async function handlePreview() {

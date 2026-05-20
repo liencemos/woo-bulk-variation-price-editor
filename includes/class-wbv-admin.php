@@ -98,8 +98,35 @@ class WBV_Admin
                     <input id="wbv-operation-label" type="text" placeholder="<?php echo esc_attr__('Operation label (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.5rem; width:18rem;" />
                     <button id="wbv-preview-btn" class="button"><?php echo esc_html__('Preview', 'woo-bulk-variation-pricer'); ?></button>
                     <button id="wbv-apply-btn" class="button button-primary"><?php echo esc_html__('Apply Changes', 'woo-bulk-variation-pricer'); ?></button>
+                    <button id="wbv-quick-create-variations-btn" class="button" style="margin-left:.5rem;"><?php echo esc_html__('Quick Add Variations', 'woo-bulk-variation-pricer'); ?></button>
                     <button id="wbv-export-csv" class="button" style="margin-left:.5rem;"><?php echo esc_html__('Export CSV', 'woo-bulk-variation-pricer'); ?></button>
                 </div>
+            </div>
+            <div id="wbv-quick-create-panel" style="margin-top:.75rem; padding:.75rem; border:1px solid #dcdcde; background:#fff;">
+                <strong><?php echo esc_html__('Bulk add specific attribute values', 'woo-bulk-variation-pricer'); ?></strong>
+                <input id="wbv-qc-attribute" type="text" placeholder="<?php echo esc_attr__('Attribute taxonomy (e.g. pa_size)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.5rem; min-width:220px;" />
+                <input id="wbv-qc-values" type="text" placeholder="<?php echo esc_attr__('Values (comma separated, e.g. M,L,XL,XXL)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; min-width:320px;" />
+                <input id="wbv-qc-regular-price" type="number" step="0.01" placeholder="<?php echo esc_attr__('Regular price for new variations (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:280px;" />
+                <input id="wbv-qc-stock-qty" type="number" step="1" placeholder="<?php echo esc_attr__('Stock qty for new variations (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:240px;" />
+            </div>
+            <div id="wbv-bulk-fields-panel" style="margin-top:.75rem; padding:.75rem; border:1px solid #dcdcde; background:#fff;">
+                <strong><?php echo esc_html__('Bulk Product Field Editor (selected variations)', 'woo-bulk-variation-pricer'); ?></strong>
+                <input id="wbv-bf-sku-prefix" type="text" placeholder="<?php echo esc_attr__('SKU prefix (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.5rem; width:220px;" />
+                <input id="wbv-bf-regular-price" type="number" step="0.01" placeholder="<?php echo esc_attr__('Regular price (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:180px;" />
+                <input id="wbv-bf-sale-price" type="number" step="0.01" placeholder="<?php echo esc_attr__('Sale price (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:180px;" />
+                <input id="wbv-bf-stock-qty" type="number" step="1" placeholder="<?php echo esc_attr__('Stock qty (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:160px;" />
+                <select id="wbv-bf-stock-status" style="margin-left:.25rem;">
+                    <option value=""><?php echo esc_html__('Stock status (optional)', 'woo-bulk-variation-pricer'); ?></option>
+                    <option value="instock"><?php echo esc_html__('In stock', 'woo-bulk-variation-pricer'); ?></option>
+                    <option value="outofstock"><?php echo esc_html__('Out of stock', 'woo-bulk-variation-pricer'); ?></option>
+                    <option value="onbackorder"><?php echo esc_html__('On backorder', 'woo-bulk-variation-pricer'); ?></option>
+                </select>
+                <input id="wbv-bf-shipping-class-id" type="number" step="1" placeholder="<?php echo esc_attr__('Shipping class ID (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:190px;" />
+                <input id="wbv-bf-weight" type="number" step="0.001" placeholder="<?php echo esc_attr__('Weight (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:150px;" />
+                <input id="wbv-bf-length" type="number" step="0.001" placeholder="<?php echo esc_attr__('Length (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:140px;" />
+                <input id="wbv-bf-width" type="number" step="0.001" placeholder="<?php echo esc_attr__('Width (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:140px;" />
+                <input id="wbv-bf-height" type="number" step="0.001" placeholder="<?php echo esc_attr__('Height (optional)', 'woo-bulk-variation-pricer'); ?>" style="margin-left:.25rem; width:140px;" />
+                <button id="wbv-bulk-fields-apply-btn" class="button button-secondary" style="margin-left:.5rem;"><?php echo esc_html__('Apply Fields', 'woo-bulk-variation-pricer'); ?></button>
             </div>
 
             <div id="wbv-results"></div>
